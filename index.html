@@ -3867,32 +3867,56 @@ function scanForQR() {
     const video = document.getElementById('scannerVideo');
     const canvas = document.getElementById('scannerCanvas');
     
-    if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    if (!video || !canvas) {
         setTimeout(scanForQR, 100);
         return;
     }
 
-    const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    
-    // Usar jsQR para detectar códigos QR
-    if (window.jsQR) {
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        
-        if (code) {
-            // Código QR detectado
-            handleQRDetected(code.data);
-            return;
-        }
+    // Verificar que el video esté listo
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        setTimeout(scanForQR, 100);
+        return;
     }
 
-    // Continuar escaneando si no se encontró código
-    setTimeout(scanForQR, 100);
+    try {
+        const context = canvas.getContext('2d');
+        
+        // Usar las dimensiones reales del video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        // Verificar que las dimensiones sean válidas
+        if (canvas.width === 0 || canvas.height === 0) {
+            setTimeout(scanForQR, 100);
+            return;
+        }
+
+        // Dibujar el frame actual del video en el canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Obtener los datos de la imagen
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // Verificar que jsQR esté disponible
+        if (window.jsQR) {
+            // Configuración más agresiva para mejor detección
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert" // Probar diferentes inversiones
+            });
+            
+            if (code && code.data) {
+                console.log('QR detectado:', code.data);
+                handleQRDetected(code.data);
+                return;
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error en scanForQR:', error);
+    }
+
+    // Continuar escaneando más frecuentemente
+    setTimeout(scanForQR, 50); // Reducido de 100ms a 50ms
 }
 
 function handleQRDetected(qrData) {
