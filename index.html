@@ -3734,49 +3734,35 @@ async function startScanner() {
             errorDiv.style.display = 'none';
         }
 
-        // Verificar soporte
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            throw new Error('BROWSER_NOT_SUPPORTED');
+        // Verificar que jsQR esté cargado
+        if (!window.jsQR) {
+            throw new Error('jsQR no está cargado. Verifica tu conexión a internet.');
         }
 
         showInfoNotification('Iniciando cámara...', 'Escáner');
 
-        // Configuración optimizada para Android
+        // Configuración optimizada para detección de QR
         const constraints = {
             video: {
-                facingMode: { ideal: 'environment' }, // Cámara trasera preferida
-                width: { ideal: 1280, min: 640 },
-                height: { ideal: 720, min: 480 },
-                frameRate: { ideal: 30, min: 15 }
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1280, min: 640, max: 1920 },
+                height: { ideal: 720, min: 480, max: 1080 },
+                frameRate: { ideal: 30, min: 15, max: 60 },
+                focusMode: 'continuous',
+                exposureMode: 'continuous',
+                whiteBalanceMode: 'continuous'
             }
         };
 
-        // Intentar con cámara trasera primero
-        try {
-            scannerStream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (err) {
-            // Si falla, intentar con cualquier cámara
-            console.log('Cámara trasera no disponible, intentando con cualquier cámara...');
-            const fallbackConstraints = {
-                video: {
-                    width: { ideal: 640, min: 320 },
-                    height: { ideal: 480, min: 240 }
-                }
-            };
-            scannerStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-        }
+        scannerStream = await navigator.mediaDevices.getUserMedia(constraints);
 
         video.srcObject = scannerStream;
-        video.setAttribute('playsinline', true); // Importante para iOS/Android
+        video.setAttribute('playsinline', true);
+        video.setAttribute('muted', true);
         video.style.display = 'block';
         
-        // Asegurar que el video se reproduzca
-        const playPromise = video.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.error('Error al reproducir video:', error);
-            });
-        }
+        // Forzar reproducción
+        await video.play();
         
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'inline-block';
@@ -3784,50 +3770,32 @@ async function startScanner() {
         
         scannerActive = true;
 
-        // Esperar a que el video esté listo
-        video.addEventListener('loadedmetadata', () => {
-            console.log('Video listo, iniciando escaneo...');
-            setTimeout(scanForQR, 500); // Dar tiempo adicional
-        });
-
-        showSuccessNotification('Cámara iniciada. Enfoca el código QR', 'Escáner activo');
+        // Esperar a que el video esté completamente listo
+        const waitForVideo = () => {
+            if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+                console.log('Video listo para escaneo');
+                showSuccessNotification('Cámara lista. Enfoca el código QR del ticket', 'Escáner activo');
+                setTimeout(scanForQR, 1000); // Dar tiempo extra
+            } else {
+                setTimeout(waitForVideo, 100);
+            }
+        };
+        
+        waitForVideo();
 
     } catch (error) {
         console.error('Error al acceder a la cámara:', error);
         
-        let errorMessage = '';
-        let suggestions = '';
-        
-        if (error.message === 'BROWSER_NOT_SUPPORTED') {
-            errorMessage = '🚫 Navegador no compatible';
-            suggestions = 'Usa Chrome, Firefox o Samsung Internet en Android';
-        } else if (error.name === 'NotAllowedError') {
-            errorMessage = '❌ Permisos de cámara denegados';
-            suggestions = `
-                <strong>En Android:</strong><br>
-                1. Toca el icono de cámara en la barra de direcciones<br>
-                2. Selecciona "Permitir"<br>
-                3. O ve a Configuración > Sitios > Permisos > Cámara
-            `;
-        } else if (error.name === 'NotFoundError') {
-            errorMessage = '📷 No se encontró cámara';
-            suggestions = 'Verifica que otra app no esté usando la cámara';
-        } else if (error.name === 'NotReadableError') {
-            errorMessage = '⚠️ Cámara ocupada por otra aplicación';
-            suggestions = 'Cierra otras apps que usen la cámara y recarga';
-        } else {
-            errorMessage = '❌ Error de cámara: ' + error.name;
-            suggestions = `
-                <strong>Soluciones:</strong><br>
-                • Recarga la página<br>
-                • Reinicia el navegador<br>
-                • Verifica permisos en Configuración<br>
-                • Usa Chrome o Firefox
-            `;
-        }
+        let errorMessage = 'Error al iniciar la cámara: ' + error.message;
         
         if (errorDiv) {
-            errorDiv.innerHTML = `${errorMessage}<br><br>${suggestions}`;
+            errorDiv.innerHTML = `
+                ${errorMessage}<br><br>
+                <strong>Alternativas:</strong><br>
+                • Verifica que jsQR esté cargado<br>
+                • Usa el botón "Subir Imagen QR"<br>
+                • Recarga la página e intenta de nuevo
+            `;
             errorDiv.style.display = 'block';
         }
         
